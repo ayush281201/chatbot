@@ -4,8 +4,8 @@ from collections import Counter
 from pymongo import MongoClient
 from heapq import nlargest
 from collections import Counter
-import re
 from word2number import w2n
+import re
 
 client=MongoClient("mongodb://localhost:27017/")
 mydb2 = client["ilsdb"] 
@@ -20,32 +20,52 @@ class DataFetch():
         self.dealerid = dealerid
 
     def remove_cart_data_query_overall(self):
-        data = []
-        for x in mycol.find():
-            event_type = x.get("event_type", "N/A")
-            dealerId=x.get("dealerId","N/A")
-            if(event_type=='remove_cart_data' and dealerId==self.dealerid):
-                product=x.get("products","N/A")[0].get("productId")    
-                for y in mycol3.find():
-                    if y.get('_id')==ObjectId(product):
-                        title = y.get('title')
-                        data.append(title)
-        data1 = list(set(data))
-        return data1
+        count_remove_product=mycol.count_documents({ 
+            "event_type": "remove_cart_data",
+            "dealerId": self.dealerid
+        })
+        if(count_remove_product>0):
+            title=set()
+            for x in mycol.find():
+                event_type = x.get("event_type", "N/A")
+                dealerId=x.get("dealerId","N/A")
+                if(event_type=='remove_cart_data' and dealerId==self.dealerid):
+                    product=x.get("products","N/A")[0].get("productId")    
+                    for y in mycol3.find():
+                        if y.get('_id')==ObjectId(product):
+                            title.add(y.get('title'))
+            return f"Discarded products:-{title}"
+        else:
+            return "No product discarded!"
+        
+
     
     def most_removed_product(self):
-        title=[] 
-        for x in mycol.find():
-            event_type = x.get("event_type", "N/A")
-            dealerId=x.get("dealerId","N/A")
-            if(event_type=='remove_cart_data' and dealerId==self.dealerid):
-                product=x.get("products","N/A")[0].get("productId")    
-                for y in mycol3.find():
-                    if y.get('_id')==ObjectId(product):
-                        title.append(y.get('title'))
-        occurrence = {item: title.count(item) for item in title}  
-        Key_max = max(zip(occurrence.values(), occurrence.keys()))[1]  
-        return Key_max
+        count_remove_product=mycol.count_documents({ 
+                "event_type": "remove_cart_data",
+                "dealerId": self.dealerid
+            })
+        totalproduct=[]
+        if(count_remove_product>0):
+            title=[] 
+            for x in mycol.find():
+                event_type = x.get("event_type", "N/A")
+                dealerId=x.get("dealerId","N/A")
+                if(event_type=='remove_cart_data' and dealerId==self.dealerid):
+                    product=x.get("products","N/A")[0].get("productId")    
+                    for y in mycol3.find():
+                        if y.get('_id')==ObjectId(product):
+                            title.append(y.get('title'))
+            occurrence = {item: title.count(item) for item in title}  
+            Key_max = [key for key in occurrence if all(occurrence[temp] <= occurrence[key] for temp in occurrence)]  
+            if(len(Key_max)==1):
+                return f"Most discarded product is {Key_max[0]}"
+            else:
+                for k in Key_max:
+                    totalproduct.append(k)
+                return f"Most discarded products are {k}"
+        else:
+            return f"No product discarded by any user!"
     
     # def remove_cart_data_query_catalog(self):
     #     mycursor = mydb1.cursor() 
@@ -95,23 +115,27 @@ class DataFetch():
     def most_viewed_catalog(self):
         result = mycol.distinct("catalogId")
         catalogidcount={}
-        catalogid=[]
+        catalog=[]
         for x in result:
-            if(type(x) is str and x!="undefined" and x[-1]!="."):
-                catalogid.append(x)
-                # mycursor = mydb1.cursor()     
+            if(type(x) is str and x!="undefined" and x[-1]!="."):  
                 y=mycol.count_documents({ 
                     "event_type": "open_catalog",
                     "catalogId": x ,
                     "dealerId":str(self.dealerid)
                 }) 
                 catalogidcount[x]=y
-        Key_max = max(zip(catalogidcount.values(), catalogidcount.keys()))[1]  
-        myresult = ob.catalogname_with_dealer(Key_max, self.dealerid)
-        return myresult
+        Key_max = [key for key in catalogidcount if all(catalogidcount[temp] <= catalogidcount[key] for temp in catalogidcount)]
+        if(len(Key_max)==1):   
+            myresult = f"Most viewed catalogue is {ob.catalogname_with_dealer(Key_max[0], self.dealerid)}"
+            return myresult
+        else:
+            for k in Key_max:
+                catalog.append(ob.catalogname_with_dealer(k, self.dealerid))
+            return f"There are more than one catalog which are most viewed:- {catalog}"
     
     def highest_selling_product(self):
         productids=[]
+        title=[]
         productcount=mycol.count_documents({"event_type": "get_quote", "dealerId":self.dealerid}) 
         if(productcount>0):
             for x in mycol.find():
@@ -120,11 +144,18 @@ class DataFetch():
                     for p in product:
                         productids.append(p.get('productId'))   
             occurrence = {item: productids.count(item) for item in productids}  
-            Key_max = max(zip(occurrence.values(), occurrence.keys()))[1]  
-            for y in mycol3.find():
-                if y.get('_id')==ObjectId(Key_max):
-                    title = y.get('title')
-                    return f"highest selling product is {title}"
+            Key_max = [key for key in occurrence if all(occurrence[temp] <= occurrence[key] for temp in occurrence)]  
+            if(len(Key_max)==1):
+                for y in mycol3.find():
+                    if y.get('_id')==ObjectId(Key_max[0]):
+                        title.append(y.get('title'))     
+            else:
+                for y in mycol3.find():
+                    for k in Key_max:
+                        if y.get('_id')==ObjectId(k):
+                            title.append(y.get('title'))
+            return f"Highest selling product:- {title}"      
+                
         else:
             return "No product sell yet!"
         
@@ -177,27 +208,35 @@ class DataFetch():
                         for y in mycol3.find():
                             if y.get('_id')==ObjectId(k):  
                                 storenames.append(y.get('store').get('label'))     
-                    return storenames
+                    return f"Most running stores are {storenames}"
                 else:
                     for y in mycol3.find():
                         if y.get('_id')==ObjectId(Key_max[0]):  
                             return f"{y.get('store').get('label')} is most running store" 
         else:
-            return "running status of all stores are consistent"
+            return "Running status of all stores are consistent"
         
+
     def add_to_cart(self):
-        title = []
-        for x in mycol.find():
-            event_type = x.get("event_type", "N/A")
-            dealerId=x.get("dealerId","N/A")
-            if(event_type=='add_to_cart' and dealerId==self.dealerid):
-                product=x.get("products","N/A")[0].get("productId")    
-                for y in mycol3.find():
-                    if y.get('_id')==ObjectId(product):
-                        title.append(y.get('title'))
-        finalTitle = list(set(title))
-        return finalTitle
+        count_product=mycol.count_documents({ 
+            "event_type": "add_to_cart",
+            "dealerId": self.dealerid
+        })
+        if(count_product>0):
+            title = set()
+            for x in mycol.find():
+                event_type = x.get("event_type", "N/A")
+                dealerId=x.get("dealerId","N/A")
+                if(event_type=='add_to_cart' and dealerId==self.dealerid):
+                    product=x.get("products","N/A")[0].get("productId")    
+                    for y in mycol3.find():
+                        if y.get('_id')==ObjectId(product):
+                            title.add(y.get('title'))
+            return f"User added following product to cart:- {title}"
+        else:
+            return "No product added to cart!"
     
+
     def most_search_keyword(self):
         searchtotal={}
         for x in mycol.find({'filters.searchKeywords':{'$ne':""},'dealerId':self.dealerid}):
@@ -281,26 +320,26 @@ class DataFetch():
 
 
     def top_x_products(self, str2):
-        output = list(map(int, re.findall(r'\d+', str2)))
+        output=list(map(int, re.findall(r'\d+', str2)))
         if(len(output)==0):
             try:
                 w2n.word_to_num(str2)
-                nproduct = w2n.word_to_num(str2)
+                nproduct=w2n.word_to_num(str2)
             except ValueError:
                 return "Please enter your query with number that how many products you want"
         else:
-            nproduct = output[0]
-        productids = []
-        title = []
-        productcount = mycol.count_documents({"event_type": "get_quote", "dealerId": self.dealerid})
+            nproduct=output[0]
+        productids=[]
+        title=[]
+        productcount=mycol.count_documents({"event_type": "get_quote", "dealerId":self.dealerid}) 
         if(productcount>0):
             for x in mycol.find():
-                if(x.get('dealerId')==self.dealerid and x.get('event_type')=="get_quote"):
-                    product = x.get('products')
+                if(x.get('dealerId')==self.dealerid and x.get('event_type')=='get_quote'):
+                    product=x.get('products')
                     for p in product:
-                        productids.append(p.get('productId'))
-            occurrence = {item: productids.count(item) for item in productids}
-            ThreeHighest = nlargest(nproduct, occurrence, key = occurrence.get)
+                        productids.append(p.get('productId'))  
+            occurrence = {item: productids.count(item) for item in productids}  
+            ThreeHighest = nlargest(nproduct, occurrence, key = occurrence.get) 
             for y in mycol3.find():
                 for k in ThreeHighest:
                     if y.get('_id')==ObjectId(k):
@@ -308,53 +347,11 @@ class DataFetch():
             if(len(occurrence)<nproduct):
                 return f"Your only {len(occurrence)} products sell. These are following products sold:- {title}"
             else:
-                return title
+                return f"Top {nproduct} product are {title}"  
         else:
             return "No product sell yet!"
-    
-    # def top_4_products(self):
-    #     productids=[]
-    #     title=[]
-    #     productcount=mycol.count_documents({"event_type": "get_quote", "dealerId":self.dealerid}) 
-    #     if(productcount>0):
-    #         for x in mycol.find():
-    #             if(x.get('dealerId')==self.dealerid and x.get('event_type')=='get_quote'):
-    #                 product=x.get('products')
-    #                 for p in product:
-    #                     productids.append(p.get('productId'))  
-    #         occurrence = {item: productids.count(item) for item in productids}  
-    #         if(len(occurrence)<4):
-    #             Key_max = [key for key in occurrence if all(occurrence[temp] <= occurrence[key] for temp in occurrence)]  
-    #             ThreeHighest = nlargest(4, occurrence, key = occurrence.get) 
-    #             for y in mycol3.find():
-    #                 for k in ThreeHighest:
-    #                     if y.get('_id')==ObjectId(k):
-    #                         title.append(y.get('title'))
-    #             return f"Your only {len(occurrence)} products sell. These are following products sold:- {title}"
-    #     else:
-    #         return "No product sell yet!"
-    
-    # def top_5_products(self):
-    #     productids=[]
-    #     title=[]
-    #     productcount=mycol.count_documents({"event_type": "get_quote", "dealerId":self.dealerid}) 
-    #     if(productcount>0):
-    #         for x in mycol.find():
-    #             if(x.get('dealerId')==self.dealerid and x.get('event_type')=='get_quote'):
-    #                 product=x.get('products')
-    #                 for p in product:
-    #                     productids.append(p.get('productId'))  
-    #         occurrence = {item: productids.count(item) for item in productids}  
-    #         if(len(occurrence)<5):
-    #             Key_max = [key for key in occurrence if all(occurrence[temp] <= occurrence[key] for temp in occurrence)]  
-    #             ThreeHighest = nlargest(5, occurrence, key = occurrence.get) 
-    #             for y in mycol3.find():
-    #                 for k in ThreeHighest:
-    #                     if y.get('_id')==ObjectId(k):
-    #                         title.append(y.get('title'))
-    #             return f"Your only {len(occurrence)} products sell. These are following products sold:- {title}"
-    #     else:
-    #         return "No product sell yet!"
+        
+
 
     def most_inquiry(self):
         whatsapp_enquiry=mycol.count_documents({
@@ -366,22 +363,24 @@ class DataFetch():
             "event_type": "get_quote"
         })
         if(whatsapp_enquiry>get_quote):
-            return "User enquires more through whatsapp."
+            return "User inquires more through whatsapp."
         elif(get_quote>whatsapp_enquiry):
-            return "User enquires more through quotation."
+            return "User inquires more through quotation."
         elif(get_quote==0 and whatsapp_enquiry==0):
-            return 'No enquiry took place through whatsapp or quotation.'
+            return 'No inquiry took place through whatsapp or quotation.'
         else:
-            return "Enquiry on whatsapp and through quotation both occur in equal manner."
+            return "Inquiry on whatsapp and through quotation both occur in equal manner."
+        
+
 
     def most_viewed_product(self):
         countproduct=mycol.count_documents({
             'event_type':"open_product_detail_page",
             'dealerId':self.dealerid
         })
-        title=[]
-        products=[]
         if countproduct!=0:
+            title=[]
+            products=[]
             for x in mycol.find({'dealerId':self.dealerid,'event_type':'open_product_detail_page','products': { '$size': 1}}):
                 productids=x.get('products')[0].get('productId')
                 products.append(productids)
@@ -396,10 +395,12 @@ class DataFetch():
                     for k in Key_max:
                         if y.get('_id')==ObjectId(k):
                             title.append(y.get('title'))
-            return title
+            return f"Most viewed product {title}"
         else:
             return "No product viewed yet!"
         
+
+
     def most_user_location(self):
         totalcount=mycol.count_documents({ 
                     "dealerId":self.dealerid
@@ -413,10 +414,12 @@ class DataFetch():
             occurrence = {item: location.count(item) for item in location}
             Key_max = [key for key in occurrence if all(occurrence[temp] <= occurrence[key] for temp in occurrence)] 
             if len(Key_max)>1:
-                return f"most users are from {Key_max}"
+                return f"Most users are from {Key_max}"
             else:
-                return f"most users are from {Key_max[0]}"
+                return f"Most users are from {Key_max[0]}"
             
+
+
     def all_user_location(self):
         totalcount=mycol.count_documents({ 
                     "dealerId":self.dealerid
@@ -427,7 +430,8 @@ class DataFetch():
         else:
             for x in mycol.find({"dealerId":self.dealerid}):
                 location.add(x.get('users').get('userLocation'))
-            return location
+            return f"Users are from location:-{location}"
+        
             
     def user_device_type(self):
         totalcount=mycol.count_documents({ 
@@ -444,11 +448,13 @@ class DataFetch():
                 else:
                     laptopcount+=1
         if(mobilecount>laptopcount):
-            return "Users use mostly use Mobiles to access your catalogs."
+            return "Users mostly use Mobiles to access your catalogs."
         elif(mobilecount<laptopcount):
             return "Users mostly access your catalogs through Laptop/Desktop."
         else:
             return "User access your catalogs with mobile and laptop/desktop in similar manner."
+        
+
         
     def most_applied_sorting(self):
         sorting = []
@@ -472,6 +478,7 @@ class DataFetch():
         else:
             return 'No user applied any price sorting'
         
+        
     def most_applied_price_range(self):
         price=[]
         for x in mycol.find({'dealerId':self.dealerid,"filters.priceRange":{'$ne':[]}}):
@@ -482,7 +489,7 @@ class DataFetch():
             sublist_tuples = [tuple(sublist) for sublist in price]
             counter = Counter(sublist_tuples)
             max_occurrence_sublist = counter.most_common(1)[0][0]
-            return f"Maximum time occur price range in catalogs is from {list(max_occurrence_sublist)}"
+            return f"Most applied price range is {list(max_occurrence_sublist)}"
         else:
             return "No price range filter applied by any user"
         
@@ -500,7 +507,7 @@ class DataFetch():
             occurrence = {item: products.count(item) for item in products} 
             Key_max = [key for key in occurrence if all(occurrence[temp] <= occurrence[key] for temp in occurrence)]
             if(len(Key_max)==0):
-                return "No category specify for most viewed product."
+                return "Not any category specify for most viewed product."
             else:
                 if(len(Key_max)==1):
                     for x in mycol.find({'dealerId':self.dealerid,'event_type':'open_product_detail_page','products': { '$size': 1},'products.productId':Key_max[0], "products.categoryIds":{'$ne': []}}):
@@ -519,9 +526,9 @@ class DataFetch():
                 if(len(categoryoccurrence)!=0):
                     categoryKey_max = [key for key in categoryoccurrence if all(categoryoccurrence[temp] <= categoryoccurrence[key] for temp in categoryoccurrence)]
                     myresult = ob.category(categoryKey_max[0], self.dealerid)
-                    return myresult[0]
+                    return f"Most viewed category is {myresult[0]}"
                 else:
-                    return "No category specify for most viewed product."
+                    return "Not any category specify for most viewed product."
         else:
             return 'No product viewed.'
 
@@ -547,11 +554,12 @@ class DataFetch():
                 tagoccurrence = {item: markettags.count(item) for item in markettags} 
                 tagKey_max = [key for key in tagoccurrence if all(tagoccurrence[temp] <= tagoccurrence[key] for temp in tagoccurrence)]
                 if(len(tagKey_max)!=0):
-                    return tagKey_max
+                    return f"Most viewed tag :-{tagKey_max}"
                 else:
                     return 'No tag specify for most viewed product.'
         else:
             return 'No product viewed.'
+        
         
     def most_viewed_price_range(self):
         countproduct=mycol.count_documents({
@@ -598,14 +606,39 @@ class DataFetch():
                 for y in mycol3.find({'dealerId':int(self.dealerid)}):
                     if y.get('_id')==ObjectId(Key_max[0]):
                         title.append(y.get('title'))
-                return title
+                return f"Most interesting product is {title}"
             elif(len(Key_max)>1):
                 for y in mycol3.find({'dealerId':int(self.dealerid)}):
                     for k in Key_max:
                         if y.get('_id')==ObjectId(k):
                             title.append(y.get('title'))
-                return title
+                return f"Most interesting products are {title}"
             else:
                 return "No product appear as interesting product!"
         else:
             return "No product appear as interesting product!"
+        
+    def most_wished_product(self):
+        countproduct=mycol.count_documents({
+            'event_type':"add_to_cart",
+            'dealerId':self.dealerid
+        })
+        if(countproduct>0):
+            productname=[]
+            for x in mycol.find():
+                event_type = x.get("event_type", "N/A")
+                dealerId=x.get("dealerId","N/A")
+                if(event_type=='add_to_cart' and dealerId==self.dealerid):
+                    product=x.get("products","N/A")[0].get("productId")    
+                    for y in mycol3.find():
+                        if y.get('_id')==ObjectId(product):
+                            title=y.get('title')
+                            productname.append(title)
+            occurrence = {item: productname.count(item) for item in productname} 
+            Key_max = [key for key in occurrence if all(occurrence[temp] <= occurrence[key] for temp in occurrence)] 
+            if(len(Key_max)==1):
+                return f"Most wished product is {Key_max[0]}"
+            else:
+                return f"Most wished products are {Key_max}"
+        else:
+            return "No product wished by users!"

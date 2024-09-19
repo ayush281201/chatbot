@@ -19,6 +19,14 @@ class Main:
         for x in myresult2:
             catalogtitle=x
         return catalogtitle
+    def catalogname_all(self, dealerid):
+        catalog = []
+        qry = f"select secure_link_title from tblinvseclinks where dealer_id={dealerid}"
+        self.mycursor.execute(qry)
+        myresult2 = self.mycursor.fetchall()
+        for x in myresult2:
+            catalog.append(x[0])
+        return catalog
     
     def catalogname_with_dealer(self, catalog_id, dealerid):
         qry = f"select secure_link_title from tblinvseclinks where uuid={catalog_id} and dealer_id = {dealerid}"
