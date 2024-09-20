@@ -4,8 +4,8 @@ import json
 from sql import *
 from fetchdata import *
 
-openai.api_base = "https://api.pawan.krd/unfiltered/v1"
-openai.api_key = "pk-CYcotIUDCsvFkbCuhMslTHLbcsPARGdHLDzEfEMMyZUAyriG"
+
+openai.api_key = "<your api key>"
 
 ob = Main()
 
